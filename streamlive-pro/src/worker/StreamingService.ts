@@ -104,8 +104,12 @@ export class StreamingService extends EventEmitter {
       this.ffmpegProcess.stderr.on('data', (data) => {
           // 解析输出，监控错误，更新状态
           const output = data.toString();
-          if (output.includes('error')) {
-               console.error('[StreamingService] FFmpeg error detected.');
+          const lowerOutput = output.toLowerCase();
+
+          if (lowerOutput.includes('error') || lowerOutput.includes('broken pipe') || lowerOutput.includes('connection reset') || lowerOutput.includes('read error')) {
+               console.error('[StreamingService] FFmpeg stream exception detected:', output.trim());
+               // 若匹配到断流特征，可在未来进一步通过抛出事件直接触发重连
+               // this.handleDisconnect() (当前保留在 close 事件中处理兜底)
           }
       });
 

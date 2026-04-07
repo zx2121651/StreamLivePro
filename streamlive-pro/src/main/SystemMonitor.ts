@@ -6,18 +6,19 @@ export class SystemMonitor extends EventEmitter {
   private interval: NodeJS.Timeout | null = null;
   private previousCpuInfo: any = null;
   private previousNetInfo: { rxBytes: number, txBytes: number, time: number } | null = null;
+  private isFetchingNetStats: boolean = false;
 
   constructor(private intervalMs: number = 2000) {
     super();
   }
 
-  start() {
+  async start() {
     if (this.interval) return;
     this.previousCpuInfo = this.getCpuInfo();
-    this.previousNetInfo = this.getNetworkStats();
+    this.previousNetInfo = await this.getNetworkStats();
 
-    this.interval = setInterval(() => {
-      this.emitStats();
+    this.interval = setInterval(async () => {
+      await this.emitStats();
     }, this.intervalMs);
 
     console.log('[SystemMonitor] Started monitoring system resources.');
@@ -31,7 +32,7 @@ export class SystemMonitor extends EventEmitter {
     console.log('[SystemMonitor] Stopped monitoring.');
   }
 
-  private emitStats() {
+  private async emitStats() {
     const cpuUsage = this.calculateCpuUsage();
 
     // 稳定性（假定算法：基于内存和错误率，这里用内存占用率反向表示）
@@ -42,7 +43,7 @@ export class SystemMonitor extends EventEmitter {
     let stability = 100 - (Math.max(0, memUsageRatio - 0.8) * 100);
     stability = Math.max(0, Math.min(100, stability)); // 钳制在 0-100 之间
 
-    const networkBandwidth = this.calculateNetworkBandwidth();
+    const networkBandwidth = await this.calculateNetworkBandwidth();
 
     this.emit('stats-updated', {
       cpu: parseFloat(cpuUsage.toFixed(1)),
@@ -52,10 +53,14 @@ export class SystemMonitor extends EventEmitter {
     });
   }
 
-  private getNetworkStats() {
+  private async getNetworkStats() {
+    if (this.isFetchingNetStats) {
+        return this.previousNetInfo || { rxBytes: 0, txBytes: 0, time: Date.now() };
+    }
+    this.isFetchingNetStats = true;
     try {
       if (process.platform === 'linux') {
-        const dev = fs.readFileSync('/proc/net/dev', 'utf8');
+        const dev = await fs.promises.readFile('/proc/net/dev', 'utf8');
         const lines = dev.split('\n');
         let rxBytes = 0;
         let txBytes = 0;
@@ -71,17 +76,19 @@ export class SystemMonitor extends EventEmitter {
           }
         });
 
+        this.isFetchingNetStats = false;
         return { rxBytes, txBytes, time: Date.now() };
       }
     } catch (e) {
       console.error('Error reading network stats', e);
     }
+    this.isFetchingNetStats = false;
     // Fallback/Stub for non-Linux or errors
     return { rxBytes: 0, txBytes: 0, time: Date.now() };
   }
 
-  private calculateNetworkBandwidth() {
-    const currentNetInfo = this.getNetworkStats();
+  private async calculateNetworkBandwidth() {
+    const currentNetInfo = await this.getNetworkStats();
     if (!this.previousNetInfo || currentNetInfo.rxBytes === 0) {
       this.previousNetInfo = currentNetInfo;
       return { rx: 0, tx: 0 }; // bytes per second
