@@ -46,8 +46,18 @@ class AccountWorker {
       // 3. 获取推流码 (如果适用)
       let streamCode = null;
       if (this.streamType === 'rtmp') {
-          streamCode = await this.browserInstance.getStreamCode();
-          console.log(`[Worker ${this.accountId}] Stream Code retrieved:`, streamCode);
+          try {
+              streamCode = await this.browserInstance.getStreamCode();
+              console.log(`[Worker ${this.accountId}] Stream Code retrieved:`, streamCode);
+          } catch (e: any) {
+              // 优先使用用户在界面手动配置的推流地址 (如果存在)，否则抛出错误终止
+              if (this.streamConfig && this.streamConfig.server && this.streamConfig.key) {
+                  console.warn(`[Worker ${this.accountId}] Sniffing failed, falling back to manual config: ${this.streamConfig.server}`);
+                  streamCode = this.streamConfig;
+              } else {
+                  throw new Error(`Failed to get stream code: ${e.message}`);
+              }
+          }
       }
 
       // 4. 启动流量控制

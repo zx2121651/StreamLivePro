@@ -373,12 +373,9 @@ export class BrowserInstance extends EventEmitter {
         // 设置一个超时机制，防止一直等不到
         setTimeout(() => {
             if (this.sniffResolve) {
-                console.warn(`[NetworkSniffer] Timeout waiting for stream code. Returning fallback test code.`);
+                console.error(`[NetworkSniffer] Timeout waiting for stream code (30s). Sniffing failed.`);
                 this.sniffResolve = null;
-                resolve({
-                    server: 'rtmp://live-push.example.com/live/',
-                    key: 'timeout_fallback_key',
-                });
+                reject(new Error("Network sniffing for stream code timed out after 30 seconds."));
             }
         }, 30000); // 30 秒超时
     });
