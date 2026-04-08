@@ -181,7 +181,8 @@ export class BrowserInstance extends EventEmitter {
 
       const fullUrl = searchJSON(data);
       if (fullUrl) {
-          console.log(`[NetworkSniffer] 🎉 Successfully extracted RTMP URL: ${fullUrl}`);
+          const redactedUrl = fullUrl.substring(0, fullUrl.lastIndexOf("/") + 1) + "REDACTED";
+          console.log(`[NetworkSniffer] 🎉 Successfully extracted RTMP URL: ${redactedUrl}`);
 
           // 简单的切割逻辑：以最后一个 '/' 为界，前面是 server，后面是 key
           // 实际平台可能需要更复杂的正则，比如 rtmp://domain/app/stream_name?token=...
@@ -219,12 +220,23 @@ export class BrowserInstance extends EventEmitter {
         // 尝试定位二维码 DOM
         // 实际开发中需要具体的 Selector: e.g. '.qrcode-image'
         try {
-            // 我们等待页面完全渲染，然后强制截图整个页面中心或寻找特定的 canvas/img
+            // 等待页面渲染
             await this.page.waitForTimeout(3000);
 
-            // 模拟：假设二维码在一个叫 .login-qr-code 的元素里。如果找不到，退而求其次截取页面中心。
-            // 为了保证流程走通，我们先在本地 mock 截取整个页面的缩略图当做二维码
-            const buffer = await this.page.screenshot({ type: 'png' });
+            let buffer;
+            try {
+                // 尝试精准定位二维码元素 (根据常见平台选择器)
+                const qrLocator = this.page.locator('canvas, img[src*="qrcode"], .qrcode-image').first();
+                if (await qrLocator.count() > 0) {
+                    console.log('[Browser] Found QR code element, taking element screenshot...');
+                    buffer = await qrLocator.screenshot({ type: 'png' });
+                } else {
+                    throw new Error("QR code element not found");
+                }
+            } catch (err) {
+                console.warn('[Browser] Precise QR code locator failed, falling back to full page screenshot...');
+                buffer = await this.page.screenshot({ type: 'png' });
+            }
             const base64 = buffer.toString('base64');
 
             // 抛出事件通知 UI 展示二维码
@@ -361,12 +373,9 @@ export class BrowserInstance extends EventEmitter {
         // 设置一个超时机制，防止一直等不到
         setTimeout(() => {
             if (this.sniffResolve) {
-                console.warn(`[NetworkSniffer] Timeout waiting for stream code. Returning fallback test code.`);
+                console.error(`[NetworkSniffer] Timeout waiting for stream code (30s). Sniffing failed.`);
                 this.sniffResolve = null;
-                resolve({
-                    server: 'rtmp://live-push.example.com/live/',
-                    key: 'timeout_fallback_key',
-                });
+                reject(new Error("Network sniffing for stream code timed out after 30 seconds."));
             }
         }, 30000); // 30 秒超时
     });
